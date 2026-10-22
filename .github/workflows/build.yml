@@ -6,7 +6,7 @@ on:
       release:
         description: Create a draft release tagged v<version> from res/app.rc
         type: boolean
-        default: false
+        default: true
 
 permissions:
   contents: write

@@ -6,6 +6,7 @@
 #include <shellscalingapi.h>
 #include <wtsapi32.h>
 
+#include <algorithm>
 #include <cstring>
 #include <cwchar>
 
@@ -26,7 +27,10 @@ int App::Run(HINSTANCE instance, bool isStartHidden) {
   RegisterClassExW(&windowClass);
   CreateWindowExW(kWindowExStyle, kWindowClass, kAppName, kWindowStyle, 0, 0, 0, 0, nullptr, nullptr, instance, this);
   if (!hwnd_) return 1;
+  menuOwner_ = CreateWindowExW(WS_EX_TOOLWINDOW, L"STATIC", nullptr, WS_POPUP, 0, 0, 0, 0, nullptr, nullptr, instance, nullptr);
   worker_ = std::make_unique<DdcWorker>(hwnd_, kProbedMessage);
+  LoadAutoSource();
+  StartAuto();
   EnumerateMonitors();
   AddTrayIcon();
   if (!isStartHidden) ShowAtCorner();
@@ -76,6 +80,9 @@ LRESULT App::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
     case WM_LBUTTONUP:
       OnMouseUp(lParam);
       return 0;
+    case WM_RBUTTONUP:
+      OnRightClick(lParam);
+      return 0;
     case WM_MOUSELEAVE:
       OnMouseLeave();
       return 0;
@@ -86,7 +93,7 @@ LRESULT App::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
       OnMouseWheel(wParam, lParam);
       return 0;
     case WM_KEYDOWN:
-      if (wParam == VK_ESCAPE) HideWindow();
+      if (wParam == VK_ESCAPE) OnEscape();
       return 0;
     case WM_CLOSE:
       HideWindow();
@@ -114,6 +121,12 @@ LRESULT App::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
       return 0;
     case kProbedMessage:
       OnProbed(wParam, lParam);
+      return 0;
+    case kLightReadingMessage:
+      OnLightReading(lParam);
+      return 0;
+    case kLightChangedMessage:
+      OnLightChanged();
       return 0;
     case kShowMessage:
       ShowAtCorner();
@@ -150,6 +163,7 @@ void App::OnDestroy() {
   WTSUnRegisterSessionNotification(hwnd_);
   KillTimer(hwnd_, kSaveTimer);
   KillTimer(hwnd_, kGammaWatchTimer);
+  StopAuto();
   SaveAll();
   RemoveTrayIcon();
   ResetGammaRamps();
@@ -157,6 +171,7 @@ void App::OnDestroy() {
   ReleaseBackBuffer();
   DestroyFonts();
   if (trayIcon_) DestroyIcon(trayIcon_);
+  if (menuOwner_) DestroyWindow(menuOwner_);
   PostQuitMessage(0);
 }
 
@@ -168,6 +183,8 @@ void App::OnTimer(WPARAM timer) {
     return;
   }
   if (timer == kGammaWatchTimer) RestoreGammaRamps();
+  if (timer == kLightTimer) StepLight();
+  if (timer == kClockTimer) UpdateClock();
 }
 
 void App::OnDpiChanged(WPARAM wParam) {
@@ -218,9 +235,14 @@ void App::OnResumed() {
   if (hasPendingEnumerate_) {
     hasPendingEnumerate_ = false;
     EnumerateMonitors();
-    return;
+  } else {
+    RestoreGammaRamps();
   }
-  RestoreGammaRamps();
+  if (autoSource_ == AutoSource::time) {
+    UpdateClock();
+  } else {
+    ApplyAuto();
+  }
 }
 
 void App::ToggleWindow() {
@@ -253,7 +275,38 @@ bool App::IsUncovered() const {
 
 void App::HideWindow() {
   ShowWindow(hwnd_, SW_HIDE);
-  isCloseHot_ = false;
+  hotButton_ = TitleButton::none;
+  isHelpVisible_ = false;
+  ExitPreview();
+}
+
+void App::OnEscape() {
+  if (isHelpVisible_) {
+    ToggleHelp();
+    return;
+  }
+  HideWindow();
+}
+
+void App::ToggleHelp() {
+  isHelpVisible_ = !isHelpVisible_;
+  helpScroll_ = 0;
+  ResizeWindow();
+  InvalidateRect(hwnd_, nullptr, FALSE);
+}
+
+void App::ScrollHelp(int wheelDelta) {
+  const int maxScroll = HelpMaxScroll();
+  const int step = Scale(kHelpScrollStep);
+  const int moved = helpScroll_ - MulDiv(wheelDelta, step, WHEEL_DELTA);
+  const int scroll = std::clamp(moved, 0, maxScroll);
+  if (scroll == helpScroll_) return;
+  helpScroll_ = scroll;
+  const int titleHeight = Scale(kTitleHeight);
+  const int clientWidth = ClientWidth();
+  const int clientHeight = ClientHeight();
+  const RECT content{0, titleHeight, clientWidth, clientHeight};
+  InvalidateRect(hwnd_, &content, FALSE);
 }
 
 void App::ShowAtCorner() {

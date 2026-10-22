@@ -26,18 +26,86 @@ void App::ShowTrayMenu(int x, int y) {
   const bool isAutorun = IsAutorunEnabled();
   const UINT autorunFlags = MF_STRING | (isAutorun ? MF_CHECKED : MF_UNCHECKED);
   const wchar_t* dimOffText = isDimOffHotkeyRegistered_ ? L"Turn dim off\tCtrl+Alt+Shift+D" : L"Turn dim off";
+  const HMENU autoMenu = CreateAutoMenu();
+  const UINT_PTR autoMenuId = reinterpret_cast<UINT_PTR>(autoMenu);
   AppendMenuW(menu, MF_STRING, kCommandDimOff, dimOffText);
+  AppendMenuW(menu, MF_POPUP, autoMenuId, L"Auto adjust");
   AppendMenuW(menu, autorunFlags, kCommandAutorun, L"Run at startup");
   AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
   AppendMenuW(menu, MF_STRING, kCommandExit, L"Exit");
-  SetForegroundWindow(hwnd_);
-  const UINT command = TrackPopupMenuEx(menu, TPM_RETURNCMD | TPM_RIGHTBUTTON | TPM_NONOTIFY, x, y, hwnd_, nullptr);
+  SetForegroundWindow(menuOwner_);
+  const UINT command = TrackPopupMenuEx(menu, TPM_RETURNCMD | TPM_RIGHTBUTTON | TPM_NONOTIFY, x, y, menuOwner_, nullptr);
   DestroyMenu(menu);
   // documented tray menu requirement, the next menu closes instantly without it
-  PostMessageW(hwnd_, WM_NULL, 0, 0);
+  PostMessageW(menuOwner_, WM_NULL, 0, 0);
   if (command == kCommandDimOff) TurnDimOff();
   if (command == kCommandAutorun) SetAutorun(!isAutorun);
   if (command == kCommandExit) DestroyWindow(hwnd_);
+  RunAutoCommand(command);
+}
+
+void App::ShowAutoMenu() {
+  const RECT button = TitleButtonRect(TitleButton::autoAdjust);
+  POINT topLeft{button.left, button.top};
+  POINT bottomRight{button.right, button.bottom};
+  ClientToScreen(hwnd_, &topLeft);
+  ClientToScreen(hwnd_, &bottomRight);
+  TPMPARAMS placement{};
+  placement.cbSize = sizeof(placement);
+  placement.rcExclude = {topLeft.x, topLeft.y, bottomRight.x, bottomRight.y};
+  const HMENU menu = CreateAutoMenu();
+  isAutoMenuOpen_ = true;
+  InvalidateTitle();
+  const UINT flags = TPM_RETURNCMD | TPM_NONOTIFY | TPM_RIGHTALIGN | TPM_TOPALIGN | TPM_VERTICAL;
+  const UINT command = TrackPopupMenuEx(menu, flags, bottomRight.x, bottomRight.y, hwnd_, &placement);
+  DestroyMenu(menu);
+  isAutoMenuOpen_ = false;
+  hotButton_ = TitleButton::none;
+  InvalidateTitle();
+  RunAutoCommand(command);
+}
+
+HMENU App::CreateAutoMenu() const {
+  const HMENU menu = CreatePopupMenu();
+  const bool isAutoOff = autoSource_ == AutoSource::off;
+  const UINT resetFlags = MF_STRING | (isAutoOff ? MF_GRAYED : MF_ENABLED);
+  const UINT checkedCommand = AutoCommand(autoSource_);
+  AppendMenuW(menu, MF_STRING, kCommandAutoOff, L"Off");
+  AppendMenuW(menu, MF_STRING, kCommandAutoLight, L"Follow light sensor");
+  AppendMenuW(menu, MF_STRING, kCommandAutoTime, L"Follow time of day");
+  AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
+  AppendMenuW(menu, resetFlags, kCommandResetCalibration, L"Reset calibration");
+  CheckMenuRadioItem(menu, kCommandAutoOff, kCommandAutoTime, checkedCommand, MF_BYCOMMAND);
+  return menu;
+}
+
+void App::RunAutoCommand(UINT command) {
+  switch (command) {
+    case kCommandAutoOff:
+      SetAutoSource(AutoSource::off);
+      return;
+    case kCommandAutoLight:
+      SetAutoSource(AutoSource::light);
+      return;
+    case kCommandAutoTime:
+      SetAutoSource(AutoSource::time);
+      return;
+    case kCommandResetCalibration:
+      ResetCalibration();
+      return;
+  }
+}
+
+UINT App::AutoCommand(AutoSource source) {
+  switch (source) {
+    case AutoSource::light:
+      return kCommandAutoLight;
+    case AutoSource::time:
+      return kCommandAutoTime;
+    case AutoSource::off:
+      return kCommandAutoOff;
+  }
+  return kCommandAutoOff;
 }
 
 NOTIFYICONDATAW App::TrayData() const {

@@ -1,6 +1,7 @@
 // by claude
 
 #include <windows.h>
+#include <objbase.h>
 
 #include <cwchar>
 
@@ -26,8 +27,10 @@ int WINAPI wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE, _In_ PWSTR comm
     return 0;
   }
   const bool isStartHidden = wcsstr(commandLine, yami::App::kTrayArgument) != nullptr;
+  const HRESULT comResult = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
   yami::App app;
   const int exitCode = app.Run(instance, isStartHidden);
+  if (SUCCEEDED(comResult)) CoUninitialize();
   if (mutex) CloseHandle(mutex);
   return exitCode;
 }

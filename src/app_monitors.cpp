@@ -37,6 +37,7 @@ void App::EnumerateMonitors() {
     monitor.gamma = gamma_ramp::ReadLeftover(monitor.dc);
     const int storedDim = LoadDim(monitor.key);
     monitor.dim = std::clamp(storedDim, 0, dimCap_);
+    for (size_t i = 0; i < kCurveCount; ++i) monitor.curves[i].Load(kCurvesKeys[i], monitor.key);
     monitors_.push_back(std::move(monitor));
   }
   std::sort(monitors_.begin(), monitors_.end(), [](const Monitor& a, const Monitor& b) {
@@ -56,6 +57,7 @@ void App::EnumerateMonitors() {
   }
   ++generation_;
   worker_->Reset(generation_, std::move(ordered));
+  ApplyAuto();
   ResizeWindow();
   InvalidateRect(hwnd_, nullptr, FALSE);
   UpdateTrayTip();
@@ -83,23 +85,36 @@ void App::OnProbed(WPARAM wParam, LPARAM lParam) {
   monitor.brightness = std::min(probe.brightness, probe.maxBrightness);
   InvalidateColumn(index);
   UpdateTrayTip();
+  const bool didApply = ApplyAutoLevels(index);
+  if (didApply) ScheduleSave();
 }
 
 void App::SetSliderValue(int index, SliderKind kind, int value) {
+  const bool didChange = ChangeLevel(index, kind, value);
+  if (!didChange) return;
+  ScheduleSave();
+  if (index == dragMonitor_) {
+    didDragChange_ = true;
+    return;
+  }
+  RecordLevels(index);
+}
+
+bool App::ChangeLevel(int index, SliderKind kind, int value) {
   Monitor& monitor = monitors_[index];
   if (kind == SliderKind::brightness) {
     const int clamped = std::clamp(value, 0, monitor.maxBrightness);
-    if (clamped == monitor.brightness) return;
+    if (clamped == monitor.brightness) return false;
     monitor.brightness = clamped;
     worker_->SetBrightness(generation_, index, clamped);
   } else {
     const int clamped = std::clamp(value, 0, dimCap_);
-    if (clamped == monitor.dim) return;
+    if (clamped == monitor.dim) return false;
     monitor.dim = clamped;
     ApplyDim(monitor);
   }
   InvalidateColumn(index);
-  ScheduleSave();
+  return true;
 }
 
 void App::ApplyDim(Monitor& monitor) {
@@ -125,6 +140,7 @@ void App::ApplyDim(Monitor& monitor) {
 double App::DimToGamma(int dim) { return 1.0 - dim / 100.0; }
 
 void App::TurnDimOff() {
+  SetAutoSource(AutoSource::off);
   for (int i = 0; i < static_cast<int>(monitors_.size()); ++i) SetSliderValue(i, SliderKind::dim, 0);
 }
 
@@ -167,10 +183,13 @@ void App::StartGammaUnlock() {
 
 void App::ScheduleSave() { SetTimer(hwnd_, kSaveTimer, kSaveDelayMS, nullptr); }
 
-void App::SaveAll() const {
-  for (const Monitor& monitor : monitors_) {
+void App::SaveAll() {
+  for (Monitor& monitor : monitors_) {
     const DWORD dim = static_cast<DWORD>(monitor.dim);
     RegSetKeyValueW(HKEY_CURRENT_USER, kSettingsKey, monitor.key.c_str(), REG_DWORD, &dim, sizeof(dim));
+    if (!monitor.hasCurveChanges) continue;
+    monitor.hasCurveChanges = false;
+    for (size_t i = 0; i < kCurveCount; ++i) monitor.curves[i].Save(kCurvesKeys[i], monitor.key);
   }
 }
 
