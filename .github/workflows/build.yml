@@ -1,15 +1,16 @@
 name: build
 
 on:
+  push:
+    branches: [main]
+    paths: [src/version.h]
   workflow_dispatch:
-    inputs:
-      release:
-        description: Create a draft release tagged v<version> from src/version.h
-        type: boolean
-        default: true
 
 permissions:
   contents: write
+
+concurrency:
+  group: build-${{ github.ref }}
 
 jobs:
   build:
@@ -25,8 +26,11 @@ jobs:
             if ($header -notmatch "#define YAMI_VERSION_$_ (\d+)") { throw "YAMI_VERSION_$_ not found in src/version.h" }
             $Matches[1]
           }
-          $version = $parts -join '.'
-          "tag=v$version" >> $env:GITHUB_OUTPUT
+          $tag = 'v' + ($parts -join '.')
+          $existingTag = git ls-remote --tags origin "refs/tags/$tag"
+          $isNew = if ($existingTag) { 'false' } else { 'true' }
+          "tag=$tag" >> $env:GITHUB_OUTPUT
+          "isNew=$isNew" >> $env:GITHUB_OUTPUT
 
       - name: Build
         shell: cmd
@@ -37,9 +41,9 @@ jobs:
           name: Yami-${{ steps.version.outputs.tag }}
           path: build/Yami.exe
 
-      - name: Draft release
-        if: inputs.release
+      - name: Release
+        if: steps.version.outputs.isNew == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.version.outputs.tag }}
-        run: gh release create "$env:TAG" build/Yami.exe --draft --title "Yami $env:TAG" --target "$env:GITHUB_SHA" --generate-notes
+        run: gh release create "$env:TAG" build/Yami.exe --title "Yami $env:TAG" --target "$env:GITHUB_SHA" --generate-notes
