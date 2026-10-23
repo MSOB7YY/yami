@@ -111,6 +111,11 @@ void App::PaintHelp(HDC dc) const {
     }
     offset += cardHeight;
   }
+  offset += kHelpVersionGap;
+  const int versionTop = contentTop + Scale(offset);
+  const int versionBottom = contentTop + Scale(offset + kHelpVersionHeight);
+  const RECT version{cardLeft, versionTop, cardRight, versionBottom};
+  DrawLabel(dc, kVersionText, version, labelFont_, kColorTextDim, DT_CENTER);
   SelectClipRgn(dc, nullptr);
   if (maxScroll > 0) PaintHelpScrollbar(dc, scroll, maxScroll);
 }

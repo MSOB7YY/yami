@@ -16,6 +16,7 @@
 #include "calibration_curve.h"
 #include "ddc_worker.h"
 #include "light_sensor.h"
+#include "version.h"
 
 namespace yami {
 
@@ -144,6 +145,7 @@ class App {
   static constexpr TitleButton kTitleButtons[] = {TitleButton::help, TitleButton::autoAdjust, TitleButton::close};
 
   static constexpr wchar_t kAppName[] = L"Yami";
+  static constexpr wchar_t kVersionText[] = L"Version " YAMI_VERSION_TEXT;
   static constexpr wchar_t kCloseGlyph = L'\xE8BB';
   static constexpr wchar_t kLightGlyph = L'\xE706';
   static constexpr wchar_t kClockGlyph = L'\xE121';
@@ -262,6 +264,8 @@ class App {
   static constexpr int kHelpScrollStep = 40;
   static constexpr int kHelpScrollbarWidth = 3;
   static constexpr int kHelpScrollbarInset = 3;
+  static constexpr int kHelpVersionGap = 8;
+  static constexpr int kHelpVersionHeight = 16;
   static constexpr int kFooterGap = 8;
   static constexpr int kFooterHeight = 28;
   static constexpr int kBoxRadius = 8;

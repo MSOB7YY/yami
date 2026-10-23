@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       release:
-        description: Create a draft release tagged v<version> from res/app.rc
+        description: Create a draft release tagged v<version> from src/version.h
         type: boolean
         default: true
 
@@ -20,9 +20,9 @@ jobs:
       - name: Version
         id: version
         run: |
-          $rc = Get-Content res/app.rc -Raw
+          $header = Get-Content src/version.h -Raw
           $parts = 'MAJOR', 'MINOR', 'PATCH' | ForEach-Object {
-            if ($rc -notmatch "#define YAMI_VERSION_$_ (\d+)") { throw "YAMI_VERSION_$_ not found in res/app.rc" }
+            if ($header -notmatch "#define YAMI_VERSION_$_ (\d+)") { throw "YAMI_VERSION_$_ not found in src/version.h" }
             $Matches[1]
           }
           $version = $parts -join '.'

@@ -83,7 +83,7 @@ int App::HelpContentHeight() {
     height += kHelpHeaderHeight + 2 * kHelpCardPad + rowsHeight;
   }
   const int gapCount = static_cast<int>(std::size(kHelpSections)) - 1;
-  return height + gapCount * kHelpSectionGap;
+  return height + gapCount * kHelpSectionGap + kHelpVersionGap + kHelpVersionHeight;
 }
 
 int App::HelpMaxScroll() const {
