@@ -50,14 +50,14 @@ void App::PaintTitle(HDC dc) const {
   const COLORREF glyphColor = isCloseActive ? kColorCloseGlyphHot : kColorText;
   const int buttonRadius = Scale(kTitleButtonRadius);
   FillRound(dc, close, closeBackground, closeBackground, buttonRadius);
-  DrawGlyph(dc, kCloseGlyph, close, iconFont_, glyphColor);
+  DrawGlyph(dc, closeGlyph_, close, glyphColor);
   const bool isAutoOn = autoSource_ != AutoSource::off;
-  const wchar_t autoGlyph = autoSource_ == AutoSource::time ? kClockGlyph : kLightGlyph;
+  const Glyph& autoGlyph = autoSource_ == AutoSource::time ? clockGlyph_ : lightGlyph_;
   PaintIconButton(dc, TitleButton::autoAdjust, autoGlyph, isAutoMenuOpen_, isAutoOn);
-  PaintIconButton(dc, TitleButton::help, kHelpGlyph, isHelpVisible_, isHelpVisible_);
+  PaintIconButton(dc, TitleButton::help, helpGlyph_, isHelpVisible_, isHelpVisible_);
 }
 
-void App::PaintIconButton(HDC dc, TitleButton button, wchar_t glyph, bool isPressed, bool isLit) const {
+void App::PaintIconButton(HDC dc, TitleButton button, const Glyph& glyph, bool isPressed, bool isLit) const {
   const RECT rect = TitleButtonRect(button);
   COLORREF background = kColorBackground;
   if (hotButton_ == button) background = kColorTitleButtonHot;
@@ -65,7 +65,7 @@ void App::PaintIconButton(HDC dc, TitleButton button, wchar_t glyph, bool isPres
   const COLORREF glyphColor = isLit ? kColorText : kColorTextDim;
   const int buttonRadius = Scale(kTitleButtonRadius);
   FillRound(dc, rect, background, background, buttonRadius);
-  DrawGlyph(dc, glyph, rect, glyphFont_, glyphColor);
+  DrawGlyph(dc, glyph, rect, glyphColor);
 }
 
 void App::PaintHelp(HDC dc) const {
@@ -185,8 +185,8 @@ void App::PaintStrip(HDC dc, const StripLayout& strip) const {
   const int boxRadius = Scale(kBoxRadius);
   FillRound(dc, strip.box, kColorColumn, kColorColumn, boxRadius);
   const bool isLight = autoSource_ == AutoSource::light;
-  const wchar_t glyph = isLight ? kLightGlyph : kClockGlyph;
-  DrawGlyph(dc, glyph, strip.glyph, glyphFont_, kColorTextDim);
+  const Glyph& glyph = isLight ? lightGlyph_ : clockGlyph_;
+  DrawGlyph(dc, glyph, strip.glyph, kColorTextDim);
   const float condition = AutoCondition();
   if (condition >= 0) {
     const std::wstring valueText = FormatCondition(condition);
@@ -286,23 +286,52 @@ void App::DrawLabel(HDC dc, std::wstring_view text, RECT rect, HFONT font, COLOR
   DrawTextW(dc, text.data(), static_cast<int>(text.size()), &rect, format);
 }
 
-void App::DrawGlyph(HDC dc, wchar_t glyph, const RECT& rect, HFONT font, COLORREF color) {
-  SelectObject(dc, font);
+void App::DrawGlyph(HDC dc, const Glyph& glyph, const RECT& rect, COLORREF color) {
+  if (!glyph.font) return;
+  SelectObject(dc, glyph.font);
   SetTextColor(dc, color);
+  const int centerX = (rect.left + rect.right) * (kGlyphSubpixels / 2);
+  const int centerY = (rect.top + rect.bottom) * (kGlyphSubpixels / 2);
+  const int x = (centerX - glyph.inkCenterInSubpixels.x + kGlyphSubpixels / 2) >> kGlyphSubpixelShift;
+  const int y = (centerY - glyph.inkCenterInSubpixels.y + kGlyphSubpixels / 2) >> kGlyphSubpixelShift;
+  ExtTextOutW(dc, x, y, 0, nullptr, &glyph.code, 1, nullptr);
+}
+
+App::Glyph App::MeasureGlyph(HDC dc, wchar_t code, HFONT font) {
+  SelectObject(dc, font);
   const MAT2 identity{{0, 1}, {0, 0}, {0, 0}, {0, 1}};
   GLYPHMETRICS metrics{};
-  const DWORD measured = GetGlyphOutlineW(dc, glyph, GGO_METRICS, &metrics, 0, nullptr, &identity);
-  if (measured == GDI_ERROR) return;
+  const DWORD size = GetGlyphOutlineW(dc, code, GGO_GRAY8_BITMAP, &metrics, 0, nullptr, &identity);
+  if (size == GDI_ERROR || size == 0) return {};
+  std::vector<BYTE> coverage(size);
+  GetGlyphOutlineW(dc, code, GGO_GRAY8_BITMAP, &metrics, size, coverage.data(), &identity);
   TEXTMETRICW textMetrics{};
   GetTextMetricsW(dc, &textMetrics);
-  const int inkWidth = static_cast<int>(metrics.gmBlackBoxX);
-  const int inkHeight = static_cast<int>(metrics.gmBlackBoxY);
-  const int inkLeft = rect.left + (rect.right - rect.left - inkWidth + 1) / 2;
-  const int inkTop = rect.top + (rect.bottom - rect.top - inkHeight + 1) / 2;
-  const int x = inkLeft - metrics.gmptGlyphOrigin.x;
-  const int baseline = inkTop + metrics.gmptGlyphOrigin.y;
-  const int y = baseline - textMetrics.tmAscent;
-  ExtTextOutW(dc, x, y, 0, nullptr, &glyph, 1, nullptr);
+  const int width = static_cast<int>(metrics.gmBlackBoxX);
+  const int height = static_cast<int>(metrics.gmBlackBoxY);
+  const int pitch = (width + 3) & ~3;
+  const int lastRow = (height - 1) * pitch;
+  int topCoverage = 0;
+  int bottomCoverage = 0;
+  for (int x = 0; x < width; ++x) {
+    topCoverage = std::max<int>(topCoverage, coverage[x]);
+    bottomCoverage = std::max<int>(bottomCoverage, coverage[lastRow + x]);
+  }
+  int leftCoverage = 0;
+  int rightCoverage = 0;
+  for (int row = 0; row <= lastRow; row += pitch) {
+    leftCoverage = std::max<int>(leftCoverage, coverage[row]);
+    rightCoverage = std::max<int>(rightCoverage, coverage[row + width - 1]);
+  }
+  const int inkLeft = kGlyphSubpixels - leftCoverage;
+  const int inkRight = (width - 1) * kGlyphSubpixels + rightCoverage;
+  const int inkTop = kGlyphSubpixels - topCoverage;
+  const int inkBottom = (height - 1) * kGlyphSubpixels + bottomCoverage;
+  const int boxLeft = metrics.gmptGlyphOrigin.x * kGlyphSubpixels;
+  const int boxTop = (textMetrics.tmAscent - metrics.gmptGlyphOrigin.y) * kGlyphSubpixels;
+  const int inkCenterX = boxLeft + (inkLeft + inkRight) / 2;
+  const int inkCenterY = boxTop + (inkTop + inkBottom) / 2;
+  return {font, code, {inkCenterX, inkCenterY}};
 }
 
 void App::EnsureBackBuffer(HDC target, int width, int height) {
@@ -335,6 +364,12 @@ void App::CreateFonts() {
   glyphFont_ = CreateUiFont(12, FW_NORMAL, L"Segoe MDL2 Assets");
   smallFont_ = CreateUiFont(11, FW_NORMAL, L"Segoe UI");
   smallBoldFont_ = CreateUiFont(11, FW_SEMIBOLD, L"Segoe UI Semibold");
+  const HDC measureDc = CreateCompatibleDC(nullptr);
+  closeGlyph_ = MeasureGlyph(measureDc, kCloseGlyph, iconFont_);
+  lightGlyph_ = MeasureGlyph(measureDc, kLightGlyph, glyphFont_);
+  clockGlyph_ = MeasureGlyph(measureDc, kClockGlyph, glyphFont_);
+  helpGlyph_ = MeasureGlyph(measureDc, kHelpGlyph, glyphFont_);
+  DeleteDC(measureDc);
 }
 
 void App::DestroyFonts() {

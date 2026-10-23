@@ -99,6 +99,12 @@ class App {
     int trackY;
   };
 
+  struct Glyph {
+    HFONT font = nullptr;
+    wchar_t code = 0;
+    POINT inkCenterInSubpixels{};
+  };
+
   struct HelpRow {
     const wchar_t* keys;
     const wchar_t* action;
@@ -142,6 +148,8 @@ class App {
   static constexpr wchar_t kLightGlyph = L'\xE706';
   static constexpr wchar_t kClockGlyph = L'\xE121';
   static constexpr wchar_t kHelpGlyph = L'\xE9CE';
+  static constexpr int kGlyphSubpixelShift = 6;
+  static constexpr int kGlyphSubpixels = 1 << kGlyphSubpixelShift;
   static constexpr UINT kProbedMessage = WM_APP + 1;
   static constexpr UINT kTrayMessage = WM_APP + 3;
   static constexpr UINT kLightReadingMessage = WM_APP + 4;
@@ -396,7 +404,7 @@ class App {
 
   void Paint(HDC target, const RECT& dirty);
   void PaintTitle(HDC dc) const;
-  void PaintIconButton(HDC dc, TitleButton button, wchar_t glyph, bool isPressed, bool isLit) const;
+  void PaintIconButton(HDC dc, TitleButton button, const Glyph& glyph, bool isPressed, bool isLit) const;
   void PaintHelp(HDC dc) const;
   void PaintHelpScrollbar(HDC dc, int scroll, int maxScroll) const;
   void PaintColumn(HDC dc, const Monitor& monitor, const ColumnLayout& layout, int index) const;
@@ -408,7 +416,8 @@ class App {
   static void FillColor(HDC dc, const RECT& rect, COLORREF color);
   static void FillRound(HDC dc, const RECT& rect, COLORREF fill, COLORREF border, int radius);
   static void DrawLabel(HDC dc, std::wstring_view text, RECT rect, HFONT font, COLORREF color, UINT alignment);
-  static void DrawGlyph(HDC dc, wchar_t glyph, const RECT& rect, HFONT font, COLORREF color);
+  static void DrawGlyph(HDC dc, const Glyph& glyph, const RECT& rect, COLORREF color);
+  static Glyph MeasureGlyph(HDC dc, wchar_t code, HFONT font);
   void EnsureBackBuffer(HDC target, int width, int height);
   void ReleaseBackBuffer();
   void CreateFonts();
@@ -472,6 +481,10 @@ class App {
   HFONT glyphFont_ = nullptr;
   HFONT smallFont_ = nullptr;
   HFONT smallBoldFont_ = nullptr;
+  Glyph closeGlyph_{};
+  Glyph lightGlyph_{};
+  Glyph clockGlyph_{};
+  Glyph helpGlyph_{};
   HDC backDc_ = nullptr;
   HBITMAP backBitmap_ = nullptr;
   HGDIOBJ backPreviousBitmap_ = nullptr;
