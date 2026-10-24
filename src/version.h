@@ -1,8 +1,8 @@
 #pragma once
 
 #define YAMI_VERSION_MAJOR 1
-#define YAMI_VERSION_MINOR 1
-#define YAMI_VERSION_PATCH 2
+#define YAMI_VERSION_MINOR 2
+#define YAMI_VERSION_PATCH 0
 
 #define YAMI_STRINGIFY(x) #x
 #define YAMI_VERSION_STRING(major, minor, patch) YAMI_STRINGIFY(major) "." YAMI_STRINGIFY(minor) "." YAMI_STRINGIFY(patch)

@@ -58,6 +58,7 @@ void App::EnumerateMonitors() {
   ++generation_;
   worker_->Reset(generation_, std::move(ordered));
   ApplyAuto();
+  StartGammaRestore();
   ResizeWindow();
   InvalidateRect(hwnd_, nullptr, FALSE);
   UpdateTrayTip();
@@ -125,6 +126,7 @@ void App::ApplyDim(Monitor& monitor) {
     const bool didWrite = gamma_ramp::Write(monitor.dc, gamma);
     if (didWrite) {
       monitor.gamma = gamma;
+      monitor.isRampNudged = false;
       break;
     }
     if (!monitor.dc || monitor.dim == 0) break;
@@ -144,9 +146,13 @@ void App::TurnDimOff() {
   for (int i = 0; i < static_cast<int>(monitors_.size()); ++i) SetSliderValue(i, SliderKind::dim, 0);
 }
 
+bool App::HasDimmedMonitor() const {
+  return std::any_of(monitors_.begin(), monitors_.end(), [](const Monitor& m) { return m.gamma < 1.0; });
+}
+
 void App::UpdateGammaWatch() {
   if (!kShouldPollGamma) return;
-  const bool isNeeded = std::any_of(monitors_.begin(), monitors_.end(), [](const Monitor& m) { return m.gamma < 1.0; });
+  const bool isNeeded = HasDimmedMonitor();
   if (isNeeded == isGammaWatchActive_) return;
   isGammaWatchActive_ = isNeeded;
   if (isNeeded) {
@@ -156,12 +162,26 @@ void App::UpdateGammaWatch() {
   }
 }
 
-void App::RestoreGammaRamps() const {
+void App::StartGammaRestore() {
+  if (!HasDimmedMonitor()) return;
+  RestoreGammaRamps();
+  gammaRestoresLeft_ = kGammaRestoreCount;
+  SetTimer(hwnd_, kGammaRestoreTimer, kGammaRestoreMS, nullptr);
+}
+
+void App::StepGammaRestore() {
+  RestoreGammaRamps();
+  --gammaRestoresLeft_;
+  if (gammaRestoresLeft_ > 0) return;
+  KillTimer(hwnd_, kGammaRestoreTimer);
+}
+
+void App::RestoreGammaRamps() {
   if (isSuspended_) return;
-  for (const Monitor& monitor : monitors_) {
+  for (Monitor& monitor : monitors_) {
     if (monitor.gamma >= 1.0 || !monitor.dc) continue;
-    if (gamma_ramp::IsApplied(monitor.dc, monitor.gamma)) continue;
-    gamma_ramp::Write(monitor.dc, monitor.gamma);
+    monitor.isRampNudged = !monitor.isRampNudged;
+    gamma_ramp::Write(monitor.dc, monitor.gamma, monitor.isRampNudged);
   }
 }
 

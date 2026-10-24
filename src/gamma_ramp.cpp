@@ -16,6 +16,7 @@ constexpr wchar_t kRangeKey[] = L"SOFTWARE\\Microsoft\\Windows NT\\CurrentVersio
 constexpr wchar_t kRangeValue[] = L"GdiIcmGammaRange";
 constexpr DWORD kRangeUnlocked = 256;
 constexpr DWORD kUnlockTimeoutMS = 10000;
+constexpr WORD kNudgedBlack = 1;
 
 WORD RampValue(int step, double gamma) {
   const long value = std::lround(step * 257 * gamma);
@@ -40,14 +41,7 @@ double ReadLeftover(HDC dc) {
   return gamma;
 }
 
-bool IsApplied(HDC dc, double gamma) {
-  WORD ramp[3][256];
-  const bool didRead = GetDeviceGammaRamp(dc, ramp);
-  const WORD expected = RampValue(255, gamma);
-  return didRead && ramp[0][255] == expected;
-}
-
-bool Write(HDC dc, double gamma) {
+bool Write(HDC dc, double gamma, bool isNudged) {
   if (!dc) return false;
   WORD ramp[3][256];
   for (int i = 0; i < 256; ++i) {
@@ -55,6 +49,10 @@ bool Write(HDC dc, double gamma) {
     ramp[0][i] = value;
     ramp[1][i] = value;
     ramp[2][i] = value;
+  }
+  // drivers skip a ramp equal to the last one, even after the hardware reset it
+  if (isNudged) {
+    for (auto& channel : ramp) channel[0] = kNudgedBlack;
   }
   return SetDeviceGammaRamp(dc, ramp);
 }

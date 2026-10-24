@@ -7,8 +7,7 @@
 namespace yami::gamma_ramp {
 
 double ReadLeftover(HDC dc);
-bool IsApplied(HDC dc, double gamma);
-bool Write(HDC dc, double gamma);
+bool Write(HDC dc, double gamma, bool isNudged = false);
 bool IsRangeUnlocked();
 bool UnlockRange(HWND owner);
 

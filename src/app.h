@@ -66,6 +66,7 @@ class App {
     int maxBrightness = 0;
     int dim = 0;
     double gamma = 1.0;
+    bool isRampNudged = false;
     std::array<CalibrationCurve, kCurveCount> curves;
     bool hasCurveChanges = false;
   };
@@ -171,8 +172,11 @@ class App {
   static constexpr UINT_PTR kGammaWatchTimer = 2;
   static constexpr UINT_PTR kLightTimer = 3;
   static constexpr UINT_PTR kClockTimer = 4;
+  static constexpr UINT_PTR kGammaRestoreTimer = 5;
   static constexpr UINT kSaveDelayMS = 400;
   static constexpr UINT kGammaWatchMS = 3000;
+  static constexpr UINT kGammaRestoreMS = 500;
+  static constexpr int kGammaRestoreCount = 6;
   static constexpr UINT kLightStepMS = 100;
   static constexpr UINT kMinuteMS = 60000;
   static constexpr UINT kClockSlackMS = 50;
@@ -323,8 +327,11 @@ class App {
   void ApplyDim(Monitor& monitor);
   static double DimToGamma(int dim);
   void TurnDimOff();
+  bool HasDimmedMonitor() const;
   void UpdateGammaWatch();
-  void RestoreGammaRamps() const;
+  void StartGammaRestore();
+  void StepGammaRestore();
+  void RestoreGammaRamps();
   void ResetGammaRamps();
   void StartGammaUnlock();
   void ScheduleSave();
@@ -454,6 +461,7 @@ class App {
   bool isGammaRangeUnlocked_ = false;
   int dimCap_ = kLockedDimCap;
   bool isGammaWatchActive_ = false;
+  int gammaRestoresLeft_ = 0;
   int dragMonitor_ = -1;
   SliderKind dragKind_ = SliderKind::dim;
   int dragOffset_ = 0;

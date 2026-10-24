@@ -108,7 +108,7 @@ LRESULT App::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
       OnPowerBroadcast(wParam, lParam);
       return TRUE;
     case WM_WTSSESSION_CHANGE:
-      if (wParam == WTS_SESSION_UNLOCK || wParam == WTS_CONSOLE_CONNECT) RestoreGammaRamps();
+      if (wParam == WTS_SESSION_UNLOCK || wParam == WTS_CONSOLE_CONNECT) StartGammaRestore();
       return 0;
     case WM_DPICHANGED:
       OnDpiChanged(wParam);
@@ -163,6 +163,7 @@ void App::OnDestroy() {
   WTSUnRegisterSessionNotification(hwnd_);
   KillTimer(hwnd_, kSaveTimer);
   KillTimer(hwnd_, kGammaWatchTimer);
+  KillTimer(hwnd_, kGammaRestoreTimer);
   StopAuto();
   SaveAll();
   RemoveTrayIcon();
@@ -183,6 +184,7 @@ void App::OnTimer(WPARAM timer) {
     return;
   }
   if (timer == kGammaWatchTimer) RestoreGammaRamps();
+  if (timer == kGammaRestoreTimer) StepGammaRestore();
   if (timer == kLightTimer) StepLight();
   if (timer == kClockTimer) UpdateClock();
 }
@@ -226,7 +228,7 @@ void App::OnPowerBroadcast(WPARAM event, LPARAM lParam) {
   if (!isDisplayState) return;
   DWORD displayState = 0;
   std::memcpy(&displayState, setting->Data, sizeof(displayState));
-  if (displayState == kDisplayStateOn) RestoreGammaRamps();
+  if (displayState == kDisplayStateOn) StartGammaRestore();
 }
 
 void App::OnResumed() {
@@ -236,7 +238,7 @@ void App::OnResumed() {
     hasPendingEnumerate_ = false;
     EnumerateMonitors();
   } else {
-    RestoreGammaRamps();
+    StartGammaRestore();
   }
   if (autoSource_ == AutoSource::time) {
     UpdateClock();
